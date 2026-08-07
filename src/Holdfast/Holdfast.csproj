@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Holdfast</RootNamespace>
+    <AssemblyName>Holdfast</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- Metadatos del paquete -->
+  <PropertyGroup>
+    <PackageId>Holdfast</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Diego Gerardo Larrosa</Authors>
+	<Copyright>Copyright (c) 2026 Diego Gerardo Larrosa</Copyright>
+    <Description>
+      Arena allocator with typed handles and intrusive collections for .NET.
+      Fixed-size blocks, no per-node GC objects, stable handles for the lifetime
+      of the node. Includes a doubly linked list and two red-black trees.
+      Built for long-running, single-threaded workloads with very large working
+      sets: 24 bytes per key and roughly half the insert time of SortedSet at
+      50 million keys.
+    </Description>
+    <PackageTags>arena;allocator;handle;slotmap;red-black-tree;memory;collections;gc-free;low-allocation</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/diegolarrosa/Holdfast</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/diegolarrosa/Holdfast</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <!-- SourceLink viene incluido en el SDK de .NET 8: con estas dos
+         propiedades el que depure puede entrar al codigo fuente. -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="\" />
+	  
+	<!-- La expresion SPDX enlaza al texto generico de MIT, que no lleva TU
+         aviso de copyright. Y MIT exige preservar ese aviso en toda copia.
+         Asi que los dos archivos viajan dentro del paquete. -->
+	<None Include="../../LICENSE" Pack="true" PackagePath="\" />
+	<None Include="../../THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Las pruebas y el banco tocan miembros internal (Arena.N, Handle.Raw,
+       constructores). Sin esto no compilan como proyectos separados. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Holdfast.Tests" />
+    <InternalsVisibleTo Include="Holdfast.Benchmarks" />
+  </ItemGroup>
+
+</Project>

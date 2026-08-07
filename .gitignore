@@ -1,0 +1,29 @@
+# Build
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+artifacts/
+*.nupkg
+*.snupkg
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.DotSettings.user
+
+# Test / coverage
+[Tt]est[Rr]esult*/
+*.coverage
+*.trx
+coverage*.json
+coverage*.xml
+
+# BenchmarkDotNet
+BenchmarkDotNet.Artifacts/
+
+# SO
+.DS_Store
+Thumbs.db

@@ -1,0 +1,29 @@
+# Normaliza a LF dentro del repositorio y entrega el final de linea nativo
+# en cada checkout. Sin esto, los finales de linea dependen de la config
+# de git de cada quien y aparecen diffs fantasma entre Windows y Linux.
+* text=auto
+
+# Codigo y configuracion
+*.cs        text diff=csharp
+*.csproj    text
+*.props     text
+*.targets   text
+*.json      text
+*.md        text
+*.yml       text
+*.yaml      text
+*.gitignore text
+LICENSE     text
+
+# Visual Studio no lleva bien los .sln con LF
+*.sln       text eol=crlf
+
+# Binarios: que git no los toque nunca
+*.png       binary
+*.jpg       binary
+*.ico       binary
+*.dll       binary
+*.exe       binary
+*.pdb       binary
+*.nupkg     binary
+*.snupkg    binary
