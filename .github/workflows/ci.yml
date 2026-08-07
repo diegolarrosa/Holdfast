@@ -18,9 +18,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Lee la version directamente de global.json, asi el CI y la maquina
+      # de desarrollo compilan siempre con el mismo SDK. Cambiar global.json
+      # alcanza para cambiar las dos cosas a la vez.
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          global-json-file: global.json
 
       - run: dotnet restore
       - run: dotnet build --configuration Release --no-restore
@@ -34,9 +37,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Lee la version directamente de global.json, asi el CI y la maquina
+      # de desarrollo compilan siempre con el mismo SDK. Cambiar global.json
+      # alcanza para cambiar las dos cosas a la vez.
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          global-json-file: global.json
 
       - run: dotnet pack src/Holdfast/Holdfast.csproj --configuration Release --output artifacts
 
