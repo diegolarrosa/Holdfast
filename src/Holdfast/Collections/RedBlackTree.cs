@@ -88,6 +88,28 @@ namespace Holdfast
         /// <returns>An empty tree.</returns>
         public static RedBlackTree<T, TComp> Create() => Create(default(TComp));
 
+        // State for Snapshot. Note that a tree spans two arenas: the nodes live
+        // in Arena<ArenaList<T>> and the values in Arena<T>. Both have to be in
+        // the file or the tree comes back with dangling value lists.
+
+        internal readonly void CaptureState(out long rootAddress, out long nodeCount, out long valueCount)
+        {
+            rootAddress = root.Raw;
+            nodeCount = nodes;
+            valueCount = values;
+        }
+
+        internal static RedBlackTree<T, TComp> FromState(
+            long rootAddress, long nodeCount, long valueCount, TComp comparer)
+        {
+            RedBlackTree<T, TComp> tree;
+            tree.root = new Handle<ArenaList<T>, TreeMode>(rootAddress);
+            tree.comparer = comparer;
+            tree.nodes = nodeCount;
+            tree.values = valueCount;
+            return tree;
+        }
+
         /// <summary>True when the tree holds no keys.</summary>
         public readonly bool IsEmpty => nodes == 0;
 

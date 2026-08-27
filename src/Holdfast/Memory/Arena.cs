@@ -77,6 +77,12 @@ namespace Holdfast
         {
 #if DEBUG
             byte actual = states[Layout.Block(address)][Layout.Offset(address)];
+
+            // A node loaded from a snapshot has no recorded mode: the file
+            // stores addresses, and the mode is a compile-time property of the
+            // handle. Nothing to check, so let it through.
+            if (actual == UnknownMode) return;
+
             Debug.Assert(actual != 0, $"use of freed node at {address}");
             Debug.Assert(actual == expected, $"wrong mode at {address}: is {actual}, expected {expected}");
 #endif
@@ -421,18 +427,108 @@ namespace Holdfast
         /// every handle issued so far. Intended for tests and for restarting a
         /// long computation without tearing down the process.
         /// </summary>
-        public static void Reset()
-        {
-            blocks = new Node<T>[16][];
-            blockCount = 0;
-            free = Layout.ListNull;
-            Allocated = 0;
-            Available = 0;
-            TotalAllocations = 0;
+        public static void Reset() => Restore(ArenaState<T>.Empty);
+
+        // ---------------------------------------------------------------------
+        //  State, as an object
+        // ---------------------------------------------------------------------
+
+        /// <summary>
+        /// The arena's current state as an object, so it can be written to a
+        /// stream or kept aside.
+        /// </summary>
+        /// <remarks>
+        /// This does NOT copy the blocks. The returned state shares storage with
+        /// the live arena, so it keeps changing while this arena stays active.
+        /// To freeze a state, <see cref="Swap"/> a different one in.
+        /// </remarks>
+        /// <returns>A state referring to the arena's current storage.</returns>
+        public static ArenaState<T> Capture() =>
+            new ArenaState<T>(
+                blocks, blockCount, free, Allocated, Available, TotalAllocations
 #if DEBUG
-            states = new byte[16][];
+                , states
+#endif
+                );
+
+        /// <summary>
+        /// Makes <paramref name="state"/> the arena's state. INVALIDATES every
+        /// handle that belongs to the state being replaced.
+        /// </summary>
+        /// <param name="state">The state to install.</param>
+        public static void Restore(ArenaState<T> state)
+        {
+            if (state is null) throw new ArgumentNullException(nameof(state));
+
+            blocks = state.Blocks;
+            blockCount = state.BlockCountValue;
+            free = state.Free;
+            Allocated = state.AllocatedValue;
+            Available = state.AvailableValue;
+            TotalAllocations = state.TotalAllocationsValue;
+#if DEBUG
+            states = state.States;
 #endif
         }
+
+        /// <summary>
+        /// Installs <paramref name="state"/> and hands back the one it replaced,
+        /// which from that moment stands still.
+        /// </summary>
+        /// <param name="state">The state to install.</param>
+        /// <returns>The state that was active until now.</returns>
+        public static ArenaState<T> Swap(ArenaState<T> state)
+        {
+            ArenaState<T> previous = Capture();
+            Restore(state);
+            return previous;
+        }
+
+        // ---------------------------------------------------------------------
+        //  Storage access for the serializer. Not part of the public surface:
+        //  handing out the block arrays would let anyone move nodes, which is
+        //  the one thing the whole design rules out.
+        // ---------------------------------------------------------------------
+
+        internal static Node<T>[] BlockAt(int index) => blocks[index];
+
+        internal static long FreeHead => free;
+
+        internal static void InstallBlocks(
+            Node<T>[][] newBlocks,
+            int newBlockCount,
+            long newFree,
+            long allocated,
+            long available,
+            long totalAllocations)
+        {
+            blocks = newBlocks;
+            blockCount = newBlockCount;
+            free = newFree;
+            Allocated = allocated;
+            Available = available;
+            TotalAllocations = totalAllocations;
+#if DEBUG
+            states = new byte[newBlocks.Length][];
+            for (int i = 0; i < newBlockCount; i++)
+            {
+                // A loaded arena carries no mode information: the modes live in
+                // the handle types, which are a compile-time thing and are not
+                // in the file. Marking every slot as "unknown" keeps the debug
+                // assertions from firing on nodes that are in fact valid.
+                var block = new byte[Layout.BlockSize];
+                block.AsSpan().Fill(UnknownMode);
+                states[i] = block;
+            }
+#endif
+        }
+
+        /// <summary>Whether a block array can go on the Pinned Object Heap.</summary>
+        internal static bool ReferenceFree => referenceFree;
+
+#if DEBUG
+        internal const byte UnknownMode = 255;
+#endif
 
         /// <summary>
         /// Checks that the counters add up to the reserved capacity and that

@@ -69,6 +69,13 @@ namespace Holdfast.Benchmarks
 
             long[] keys = RandomKeys(n, 20260809);
 
+            // dotnet run -c Release --project bench/Holdfast.Benchmarks -- 10000000 checkpoint
+            if (args.Length > 1 && string.Equals(args[1], "checkpoint", StringComparison.OrdinalIgnoreCase))
+            {
+                Checkpoint(keys);
+                return 0;
+            }
+
             Insertion(keys);
             Lookup(keys);
             Traversal(keys);
@@ -79,6 +86,89 @@ namespace Holdfast.Benchmarks
             Console.WriteLine();
             Console.WriteLine($"(checksum: {checksum})");
             return 0;
+        }
+
+        // =====================================================================
+        //  Checkpoint
+        // =====================================================================
+
+        /// <summary>
+        /// The comparison that matters for a checkpoint is not MB/s, which is
+        /// your disk's number and not the library's. It is loading against
+        /// rebuilding: loading is a sequential read with no per-node work,
+        /// rebuilding is n log n comparisons over cold cache lines.
+        /// </summary>
+        /// <remarks>
+        /// Single run, no repetitions and no warmup on purpose: the second read
+        /// of a file just written comes out of the page cache and measures RAM.
+        /// Even the first one is warm here, because this process wrote it. For a
+        /// number that means anything, run it, drop the cache or reboot, and run
+        /// the load half again.
+        /// </remarks>
+        private static void Checkpoint(long[] keys)
+        {
+            string path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "holdfast-checkpoint-bench.hf");
+
+            try
+            {
+                Arena<long>.Reset();
+
+                var clock = Stopwatch.StartNew();
+                var set = RedBlackSet<long, LongComparer>.Create();
+                foreach (long key in keys) set.Insert(key);
+                clock.Stop();
+                double build = clock.Elapsed.TotalSeconds;
+
+                clock.Restart();
+                var snapshot = Snapshot.Create();
+                snapshot.AddSet("index", set);
+                using (var file = new System.IO.FileStream(
+                    path, System.IO.FileMode.Create, System.IO.FileAccess.Write,
+                    System.IO.FileShare.None, 1 << 20))
+                {
+                    snapshot.SaveTo(file);
+                }
+                clock.Stop();
+                double save = clock.Elapsed.TotalSeconds;
+
+                double megabytes = new System.IO.FileInfo(path).Length / (1024.0 * 1024.0);
+
+                Arena<long>.Reset();
+                GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+
+                clock.Restart();
+                Snapshot loaded;
+                using (var file = new System.IO.FileStream(
+                    path, System.IO.FileMode.Open, System.IO.FileAccess.Read,
+                    System.IO.FileShare.Read, 1 << 20))
+                {
+                    loaded = Snapshot.LoadFrom(file);
+                }
+                loaded.Activate();
+                clock.Stop();
+                double load = clock.Elapsed.TotalSeconds;
+
+                var back = loaded.GetSet<long, LongComparer>("index");
+                checksum += back.Count;
+
+                Heading("Checkpoint");
+                Console.WriteLine($"  {"build by insertion",-28} {build * 1000,10:N0} {"",10} {"1.00x",10}");
+                Console.WriteLine($"  {"save",-28} {save * 1000,10:N0} {megabytes / save,9:N0}M {save / build,9:F3}x");
+                Console.WriteLine($"  {"load",-28} {load * 1000,10:N0} {megabytes / load,9:N0}M {load / build,9:F3}x");
+                Console.WriteLine();
+                Console.WriteLine($"  file: {megabytes:N0} MB for {back.Count:N0} keys " +
+                                  $"({Arena<long>.BlockCount} block(s) of {Layout.BlockSize:N0} nodes reserved)");
+                Console.WriteLine($"  loading instead of rebuilding: {build / load:F1}x faster");
+                Console.WriteLine();
+                Console.WriteLine("  The load figure is warm: this process wrote the file. Drop the page");
+                Console.WriteLine("  cache or reboot and run it again for a number off the disk.");
+            }
+            finally
+            {
+                if (System.IO.File.Exists(path)) System.IO.File.Delete(path);
+                Arena<long>.Reset();
+            }
         }
 
         // =====================================================================

@@ -41,8 +41,8 @@ as much as finishing sooner.
 **Serializable at any point.** Because everything is an offset rather than a
 pointer, the arena is position-independent: write the blocks to disk, load them
 in another process or on another machine, and every handle still resolves. No
-pointer fixup, no serialization code. Checkpointing a multi-day computation
-costs a file write.
+pointer fixup, no traversal, no serialization code. Checkpointing a multi-day
+computation costs a file write. See [Checkpoints](#checkpoints).
 
 Where that tends to matter: search and solver state spaces, graph and index
 structures that outlive a request, simulations, in-memory analytical stores, and
@@ -89,6 +89,76 @@ inlines the comparison instead of dispatching through an interface.
 | `ArenaList<T>` | Doubly linked list. Nest it — `ArenaList<ArenaList<T>>` is a list of lists. |
 | `RedBlackSet<T, TComp>` | Red-black tree, one value per key. 24 bytes/key for `long`. |
 | `RedBlackTree<T, TComp>` | Red-black tree where each key holds an `ArenaList<T>` of equal values. |
+| `Snapshot` | Writes a set of arenas and named roots to a stream, and reads them back. |
+| `ArenaState<T>` | An arena's state as an object, so it can be swapped out and put back. |
+
+## Checkpoints
+
+```csharp
+// Stop.
+var snapshot = Snapshot.Create();
+snapshot.AddSet("index", index);
+
+using (var file = File.Create("checkpoint.hf"))
+    snapshot.SaveTo(file);
+```
+
+```csharp
+// Resume, in a process that has built nothing.
+Snapshot snapshot;
+using (var file = File.OpenRead("checkpoint.hf"))
+    snapshot = Snapshot.LoadFrom(file);
+
+snapshot.Activate();
+var index = snapshot.GetSet<long, LongComparer>("index");
+```
+
+The file is the blocks, verbatim, plus a header. Loading is a read into fresh
+blocks — there is no graph walk and nothing is rewritten, so a `Handle` you
+wrote down before the save is the same value after the load and still points at
+the same node.
+
+`AddSet`, `AddList`, `AddTree` and `AddHandle` each pull in the arenas they
+need. That matters most for `RedBlackTree<T, TComp>`, which spans two: its nodes
+live in `Arena<ArenaList<T>>` and its values in `Arena<T>`. Saving one without
+the other produces a tree whose value lists point at nothing, so `AddTree` adds
+both.
+
+`Activate` replaces the state of every static arena the file covers, which
+invalidates every handle the process was already holding into those arenas. It
+leaves arenas the file does not mention alone.
+
+**Where it loses.**
+
+- **The file is the reserved capacity, not the live keys.** A block is 1,048,576
+  nodes, so an arena of `long` holding one key writes 24 MB. At 50 million keys
+  it is about 1.2 GB, which is the working set anyway. At a thousand keys it is
+  still 24 MB. There is no compaction, because compaction moves nodes and moving
+  nodes is what handle stability rules out.
+- **Every checkpoint is the whole arena.** No incremental or differential
+  writes, and no compression. A checkpoint costs a sequential write of the
+  reserved blocks.
+- **`T` must hold no references.** A snapshot is a copy of memory: a reference
+  would be written as an address of the writing process. An arena of a payload
+  with a reference field is refused at save time, not at load time.
+- **Same byte order, same layout.** The header records the writer's byte order
+  and the reader refuses a mismatch rather than swapping bytes whose meaning it
+  does not know. The payload type is fingerprinted by its name and the size of
+  its node, which catches a changed type but not two fields of the same size
+  swapped around. If you reorder fields, treat old checkpoints as unreadable.
+- **The comparer is not in the file.** It is a compile-time choice and may carry
+  state, so you supply it again on load. It has to order keys the same way the
+  saved one did; nothing checks that.
+- **This is a process image, not a database.** `SaveTo` flushes the stream; it
+  does not `fsync`, and there is no journal and no transaction. A crash partway
+  through a write leaves a truncated file — the loader rejects it, but the
+  checkpoint is gone. If a checkpoint has to survive a crash, write it to a
+  temporary path, flush it to disk yourself, and rename over the previous one.
+- **Free nodes are scrubbed by default.** Blocks are allocated uninitialized, so
+  the payload of a never-used slot holds whatever those pages held before.
+  Zeroing it keeps that out of the file and makes two snapshots of the same
+  arena byte-identical. It costs one walk of the free list;
+  `SnapshotOptions.ScrubFreeNodes` turns it off.
 
 ## Benchmarks
 
@@ -162,18 +232,26 @@ assertions that compile away entirely in Release.
 - 42-bit addresses: 4,398,046,511,103 nodes, about 105 TB for a 24-byte node.
 - Not thread-safe. No locking anywhere.
 - `Arena<T>` is static per closed type `T`; two independent arenas of the same
-  `T` are not possible.
+  `T` cannot be live at once. `Arena<T>.Swap` exchanges one state for another,
+  so several can exist and take turns, but only one is addressable at a time.
 - `default(ArenaList<T>)` is not a valid empty list — use `ArenaList<T>.Empty`.
 - The workload is bound by memory latency, not by instruction count. There is
   little headroom left in micro-optimization.
 
 ## Testing
 
-42 tests. The trees are fuzzed against `SortedDictionary` and `SortedSet` over
+68 tests. The trees are fuzzed against `SortedDictionary` and `SortedSet` over
 tens of thousands of random operations, with the red-black invariants, the
 parent links, the in-order ordering and the arena's allocation counters checked
 throughout. Arena leaks and double frees are caught by asserting the exact
 allocated-node count after each scenario.
+
+Checkpoints are tested by saving, wiping the arena, loading, and then checking
+the red-black invariants and the arena counters on what came back — including an
+arena large enough to cross a block boundary, a free list left fragmented on
+purpose, and a tree whose values live in a second arena. A truncated file, a
+foreign stream, an unknown format version, a payload holding a reference and a
+root pointing outside its arena are each expected to be refused.
 
 ```
 dotnet test

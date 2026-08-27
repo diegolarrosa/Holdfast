@@ -47,6 +47,24 @@ namespace Holdfast
             }
         }
 
+        // State for Snapshot: three words, everything else is in the arena.
+
+        internal readonly void CaptureState(out long headAddress, out long tailAddress, out long size)
+        {
+            headAddress = head.Raw;
+            tailAddress = tail.Raw;
+            size = count;
+        }
+
+        internal static ArenaList<T> FromState(long headAddress, long tailAddress, long size)
+        {
+            ArenaList<T> list;
+            list.head = new Handle<T, ListMode>(headAddress);
+            list.tail = new Handle<T, ListMode>(tailAddress);
+            list.count = size;
+            return list;
+        }
+
         /// <summary>
         /// Allocates a node in the arena of lists and returns it already
         /// initialized as an empty list. The safe way to create the outer list

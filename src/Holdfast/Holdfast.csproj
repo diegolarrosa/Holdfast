@@ -10,7 +10,7 @@
   <!-- Metadatos del paquete -->
   <PropertyGroup>
     <PackageId>Holdfast</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Authors>Diego Gerardo Larrosa</Authors>
 	<Copyright>Copyright (c) 2026 Diego Gerardo Larrosa</Copyright>
     <Description>
@@ -21,7 +21,30 @@
       sets: 24 bytes per key and roughly half the insert time of SortedSet at
       50 million keys.
     </Description>
-    <PackageTags>arena;allocator;handle;slotmap;red-black-tree;memory;collections;gc-free;low-allocation</PackageTags>
+    <PackageTags>arena;allocator;handle;slotmap;red-black-tree;memory;collections;gc-free;low-allocation;serialization;checkpoint</PackageTags>
+
+    <!-- Lo que mira quien ya tiene la version anterior instalada y le aparece
+         que hay una nueva. Vacio en la 0.1.0, que para una primera version
+         esta bien; a partir de la segunda no. -->
+    <PackageReleaseNotes>
+Checkpoints. The 0.1.0 README claimed the arena was position-independent and that
+checkpointing cost a file write, without an API to do it. Now there is one.
+
+- Snapshot writes a set of arenas and named roots to a stream and reads them back.
+  The file is the blocks verbatim: no traversal, no pointer fixup. A Handle written
+  down before the save is the same value after the load, and points at the same node.
+- AddSet, AddList, AddTree and AddHandle pull in the arenas they need. AddTree adds
+  two of them, because a RedBlackTree keeps its nodes in Arena&lt;ArenaList&lt;T&gt;&gt;
+  and its values in Arena&lt;T&gt;.
+- ArenaState&lt;T&gt; is an arena's state as an object; Arena&lt;T&gt;.Capture, Restore
+  and Swap move it around. The storage stays static, so the hot path is unchanged.
+- Where it loses: the file weighs the reserved capacity rather than the live keys;
+  every checkpoint is the whole arena, with no incremental writes and no compression;
+  T must hold no references; and a file only loads on the same byte order and the
+  same node layout. All of it is in the README.
+
+68 tests, up from 42. No breaking changes.
+    </PackageReleaseNotes>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://github.com/diegolarrosa/Holdfast</PackageProjectUrl>

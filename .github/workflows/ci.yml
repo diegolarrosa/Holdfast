@@ -51,5 +51,47 @@ jobs:
           name: nupkg
           path: artifacts/*
 
-      # Descomentar cuando tengas la clave en Settings > Secrets > NUGET_API_KEY
-      # - run: dotnet nuget push "artifacts/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+  publish:
+    # Trusted Publishing: nuget.org confirma con GitHub, por OIDC, que este
+    # push sale de este repo y de este workflow, y entrega una clave que dura
+    # una hora. No hay ningun secreto de larga vida guardado en ningun lado.
+    #
+    # Antes de que esto funcione hay que crear la politica en nuget.org:
+    #   menu de usuario > Trusted Publishing > agregar
+    #   Repository Owner : diegolarrosa
+    #   Repository       : Holdfast
+    #   Workflow File    : ci.yml        (solo el nombre, sin la ruta)
+    #   Environment      : vacio
+    # y guardar el usuario de nuget.org (el nombre de perfil, NO el mail) como
+    # secret NUGET_USER en Settings > Secrets and variables > Actions.
+    #
+    # La regla de activacion de 7 dias aplica a repos privados. Este es
+    # publico, asi que no corresponde.
+    needs: pack
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    permissions:
+      # Lo unico que este job necesita, y el motivo de que sea un job aparte:
+      # el permiso de emitir el token OIDC no alcanza al resto del pipeline.
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nupkg
+          path: artifacts
+
+      - name: NuGet login (OIDC -> clave temporal)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: NuGet push
+        run: >
+          dotnet nuget push "artifacts/*.nupkg"
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate

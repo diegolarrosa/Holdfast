@@ -86,6 +86,26 @@ namespace Holdfast
         /// <returns>An empty set.</returns>
         public static RedBlackSet<T, TComp> Create() => Create(default(TComp));
 
+        // The set's whole state is the root address and the count: everything
+        // else is in the arena. These two let Snapshot write it down and put it
+        // back without making root public, which would let anyone hand the set
+        // a node from another tree.
+
+        internal readonly void CaptureState(out long rootAddress, out long size)
+        {
+            rootAddress = root.Raw;
+            size = count;
+        }
+
+        internal static RedBlackSet<T, TComp> FromState(long rootAddress, long size, TComp comparer)
+        {
+            RedBlackSet<T, TComp> set;
+            set.root = new Handle<T, TreeMode>(rootAddress);
+            set.comparer = comparer;
+            set.count = size;
+            return set;
+        }
+
         /// <summary>True when the set holds no keys.</summary>
         public readonly bool IsEmpty => count == 0;
         /// <summary>How many distinct keys the set holds.</summary>
