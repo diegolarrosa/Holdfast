@@ -57,6 +57,7 @@ checkpointing cost a file write, without an API to do it. Now there is one.
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PackageIcon>icon.png</PackageIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -74,6 +75,7 @@ checkpointing cost a file write, without an API to do it. Now there is one.
   <ItemGroup>
     <InternalsVisibleTo Include="Holdfast.Tests" />
     <InternalsVisibleTo Include="Holdfast.Benchmarks" />
+    <None Include="icon.png" Pack="true" PackagePath="/" />
   </ItemGroup>
 
 </Project>
